@@ -19,6 +19,7 @@ package createworker
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"os"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/kind/pkg/cluster/internal/create/actions"
 	"sigs.k8s.io/kind/pkg/commons"
 	"sigs.k8s.io/kind/pkg/errors"
+	"sigs.k8s.io/kind/pkg/exec"
 )
 
 type action struct {
@@ -49,6 +51,13 @@ var allowCAPAEgressIMDSGNetPol string
 const kubeconfigPath = "/kind/worker-cluster.kubeconfig"
 const workKubeconfigPath = ".kube/config"
 const CAPILocalRepository = "/root/.cluster-api/local-repository"
+const cloudProviderBackupPath = "/kind/backup/objects"
+const localBackupPath = "backup"
+
+var PathsToBackupLocally = []string{
+	cloudProviderBackupPath,
+	"/kind/manifests",
+}
 
 // NewAction returns a new action for installing default CAPI
 func NewAction(vaultPassword string, descriptorPath string, moveManagement bool, avoidCreation bool) actions.Action {
@@ -186,7 +195,7 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 		DockerRegistries: dockerRegistries,
 	}
 
-	azs, err := infra.getAzs()
+	azs, err := infra.getAzs(descriptorFile.Networks)
 	if err != nil {
 		return errors.Wrap(err, "failed to get AZs")
 	}
@@ -251,16 +260,9 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 			return errors.Wrap(err, "failed to apply manifests")
 		}
 
-		// Wait for the worker cluster creation
-		raw = bytes.Buffer{}
-		cmd = node.Command("kubectl", "-n", capiClustersNamespace, "wait", "--for=condition=ready", "--timeout", "25m", "cluster", descriptorFile.ClusterID)
-		if err := cmd.SetStdout(&raw).Run(); err != nil {
-			return errors.Wrap(err, "failed to create the worker Cluster")
-		}
-
 		// Wait for the control plane initialization
 		raw = bytes.Buffer{}
-		cmd = node.Command("kubectl", "-n", capiClustersNamespace, "wait", "--for=condition=ControlPlaneInitialized", "--timeout", "5m", "cluster", descriptorFile.ClusterID)
+		cmd = node.Command("kubectl", "-n", capiClustersNamespace, "wait", "--for=condition=ControlPlaneInitialized", "--timeout", "25m", "cluster", descriptorFile.ClusterID)
 		if err := cmd.SetStdout(&raw).Run(); err != nil {
 			return errors.Wrap(err, "failed to create the worker Cluster")
 		}
@@ -295,6 +297,18 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 
 		// Install unmanaged cluster addons
 		if !descriptorFile.ControlPlane.Managed {
+
+			if descriptorFile.InfraProvider == "azure" {
+				ctx.Status.Start("Installing cloud-provider in workload cluster ☁️")
+				defer ctx.Status.End(false)
+
+				err = installCloudProvider(node, *descriptorFile, kubeconfigPath, descriptorFile.ClusterID)
+				if err != nil {
+					return errors.Wrap(err, "failed to install external cloud-provider in workload cluster")
+				}
+				ctx.Status.End(true) // End Installing Calico in workload cluster
+			}
+
 			ctx.Status.Start("Installing Calico in workload cluster 🔌")
 			defer ctx.Status.End(false)
 
@@ -317,6 +331,14 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 		ctx.Status.Start("Preparing nodes in workload cluster 📦")
 		defer ctx.Status.End(false)
 
+		if provider.capxProvider == "aws" && descriptorFile.ControlPlane.Managed {
+			raw = bytes.Buffer{}
+			cmd = node.Command("kubectl", "-n", "capa-system", "rollout", "restart", "deployment", "capa-controller-manager")
+			if err := cmd.SetStdout(&raw).Run(); err != nil {
+				return errors.Wrap(err, "failed to reload capa-controller-manager")
+			}
+		}
+
 		if provider.capxProvider != "azure" || !descriptorFile.ControlPlane.Managed {
 			// Wait for the worker cluster creation
 			raw = bytes.Buffer{}
@@ -326,8 +348,14 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 			}
 		}
 
-		if !descriptorFile.ControlPlane.Managed {
-			// Wait for the control plane creation
+		if !descriptorFile.ControlPlane.Managed && descriptorFile.ControlPlane.HighlyAvailable {
+			// Wait for all control planes creation
+			raw = bytes.Buffer{}
+			cmd = node.Command("sh", "-c", "kubectl -n "+capiClustersNamespace+" wait --for=condition=ControlPlaneReady --timeout 10m cluster "+descriptorFile.ClusterID)
+			if err := cmd.SetStdout(&raw).Run(); err != nil {
+				return errors.Wrap(err, "failed to create the worker Cluster")
+			}
+			// Wait for all control planes to be ready
 			raw = bytes.Buffer{}
 			cmd = node.Command("sh", "-c", "kubectl -n "+capiClustersNamespace+" wait --for=jsonpath=\"{.status.unavailableReplicas}\"=0 --timeout 10m --all kubeadmcontrolplanes")
 			if err := cmd.SetStdout(&raw).Run(); err != nil {
@@ -459,6 +487,44 @@ func (a *action) Execute(ctx *actions.ActionContext) error {
 
 			ctx.Status.End(true)
 		}
+
+		// Create cloud-provisioner Objects backup
+		ctx.Status.Start("Creating cloud-provisioner Objects backup 🗄️")
+		defer ctx.Status.End(false)
+
+		if _, err := os.Stat(localBackupPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(localBackupPath, 0755); err != nil {
+				return errors.Wrap(err, "failed to create local backup directory")
+			}
+		}
+
+		raw := bytes.Buffer{}
+		cmd := node.Command("sh", "-c", "mkdir -p "+cloudProviderBackupPath)
+		if err := cmd.SetStdout(&raw).Run(); err != nil {
+			return errors.Wrap(err, "failed to create cloud-provisioner backup directory")
+		}
+
+		raw = bytes.Buffer{}
+		cmd = node.Command("sh", "-c", "chmod -R 0755 "+cloudProviderBackupPath)
+		if err := cmd.SetStdout(&raw).Run(); err != nil {
+			return errors.Wrap(err, "failed to set permissions to cloud-provisioner backup directory")
+		}
+
+		raw = bytes.Buffer{}
+		cmd = node.Command("sh", "-c", "clusterctl move -n "+capiClustersNamespace+" --to-directory "+cloudProviderBackupPath)
+		if err := cmd.SetStdout(&raw).Run(); err != nil {
+			return errors.Wrap(err, "failed to backup cloud-provisioner Objects")
+		}
+
+		for _, path := range PathsToBackupLocally {
+			raw = bytes.Buffer{}
+			cmd = exec.CommandContext(context.Background(), "sh", "-c", "docker cp "+node.String()+":"+path+" "+localBackupPath)
+			if err := cmd.SetStdout(&raw).Run(); err != nil {
+				return errors.Wrap(err, "failed to copy "+path+" to local host")
+			}
+		}
+
+		ctx.Status.End(true)
 
 		if !a.moveManagement {
 			ctx.Status.Start("Moving the management role 🗝️")
