@@ -82,33 +82,25 @@ type DescriptorFile struct {
 			Type      string `yaml:"type"`
 			Encrypted bool   `yaml:"encrypted" validate:"boolean"`
 		} `yaml:"root_volume"`
-		AWS          AWSCP         `yaml:"aws"`
-		Azure        AzureCP       `yaml:"azure"`
-		ExtraVolumes []ExtraVolume `yaml:"extra_volumes"`
+		Tags         []map[string]string `yaml:"tags"`
+		AWS          AWSCP               `yaml:"aws"`
+		Azure        AzureCP             `yaml:"azure"`
+		ExtraVolumes []ExtraVolume       `yaml:"extra_volumes"`
 	} `yaml:"control_plane"`
 
+	StorageClass StorageClass `yaml:storageclass`
 	WorkerNodes WorkerNodes `yaml:"worker_nodes" validate:"required,dive"`
 }
 
 type Networks struct {
-	VPCID                      string            `yaml:"vpc_id"`
-	VPCCidrBlock               string            `yaml:"vpc_cidr" validate:"omitempty,cidrv4"`
-	PodsCidrBlock              string            `yaml:"pods_cidr" validate:"omitempty,cidrv4"`
-	Tags                       map[string]string `yaml:"tags,omitempty"`
-	AvailabilityZoneUsageLimit int               `yaml:"az_usage_limit" validate:"numeric"`
-	AvailabilityZoneSelection  string            `yaml:"az_selection" validate:"oneof='Ordered' 'Random' '' "`
-	PodsSubnets                []Subnets         `yaml:"pods_subnets"`
-	Subnets                    []Subnets         `yaml:"subnets"`
+	VPCID         string    `yaml:"vpc_id"`
+	PodsCidrBlock string    `yaml:"pods_cidr" validate:"omitempty,cidrv4"`
+	PodsSubnets   []Subnets `yaml:"pods_subnets"`
+	Subnets       []Subnets `yaml:"subnets"`
 }
 
 type Subnets struct {
-	SubnetId         string            `yaml:"subnet_id"`
-	AvailabilityZone string            `yaml:"az,omitempty"`
-	IsPublic         *bool             `yaml:"is_public,omitempty"`
-	RouteTableId     string            `yaml:"route_table_id,omitempty"`
-	NatGatewayId     string            `yaml:"nat_id,omitempty"`
-	Tags             map[string]string `yaml:"tags,omitempty"`
-	CidrBlock        string            `yaml:"cidr,omitempty"`
+	SubnetId string `yaml:"subnet_id"`
 }
 
 type AWSCP struct {
@@ -237,6 +229,17 @@ type Secrets struct {
 	GithubToken      string                      `yaml:"github_token"`
 	ExternalRegistry DockerRegistryCredentials   `yaml:"external_registry"`
 	DockerRegistries []DockerRegistryCredentials `yaml:"docker_registries"`
+}
+
+type StorageClass struct {
+	EFS           EFS    `yaml:"efs"`
+	EncryptionKey string `yaml:"encryption_key,omitempty"`
+}
+
+type EFS struct {
+	Name        string `yaml:"name" validate:"required_with=ID"`
+	ID          string `yaml:"id" validate:"required_with=Name"`
+	Permissions string `yaml:"permissions,omitempty"`
 }
 
 type ProviderParams struct {
