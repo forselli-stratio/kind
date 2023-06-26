@@ -272,37 +272,6 @@ spec:
                   username = \"{{ $reg.user }}\"
                 {{- end }}
           path: /etc/containerd/config.toml
-        - path: /run/kubeadm/kube-proxy-config.sh
-          permissions: \"0700\"
-          content: |
-              #!/usr/bin/env bash
-              #
-              # I couldn't find a better/simpler way to change kube-proxy configuration. See:
-              # https://github.com/kubernetes-sigs/cluster-api/issues/4512
-              #
-              set -o errexit
-              set -o nounset
-              set -o pipefail
-              readonly dir="/run/kubeadm"
-              # Run this script only if this is the init node.
-              if [[ ! -f ${dir}/kubeadm.yaml ]]; then
-                  exit 0
-              fi
-              # Exit fast if already appended.
-              if [[ ! -f ${dir}/kube-proxy-config.yaml ]]; then
-                  exit 0
-              fi
-              cat ${dir}/kube-proxy-config.yaml >> ${dir}/kubeadm.yaml
-              rm ${dir}/kube-proxy-config.yaml
-        - path: /run/kubeadm/kube-proxy-patch.yaml
-          permissions: \"0600\"
-          content: |
-            ---
-            apiVersion: kubeproxy.config.k8s.io/v1alpha1
-            kind: KubeProxyConfiguration
-            metricsBindAddress: "0.0.0.0:10249"
-      preKubeadmCommands:
-        - bash /run/kubeadm/kube-proxy-patch.sh
       postKubeadmCommands:
         - systemctl restart containerd
       {{- end }}
