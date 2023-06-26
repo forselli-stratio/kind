@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# I couldn't find a better/simpler way to conifgure it. See:
+# I couldn't find a better/simpler way to change kube-proxy configuration. See:
 # https://github.com/kubernetes-sigs/cluster-api/issues/4512
 #
 
