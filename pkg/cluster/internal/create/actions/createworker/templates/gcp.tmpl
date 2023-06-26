@@ -273,7 +273,7 @@ spec:
                 {{- end }}
           path: /etc/containerd/config.toml
         - path: /run/kubeadm/kube-proxy-config.sh
-          permissions: \"0600\"
+          permissions: \"0700\"
           content: |
               #!/usr/bin/env bash
               #
@@ -295,7 +295,7 @@ spec:
               cat ${dir}/kube-proxy-config.yaml >> ${dir}/kubeadm.yaml
               rm ${dir}/kube-proxy-config.yaml
         - path: /run/kubeadm/kube-proxy-patch.yaml
-          permissions: \"0700\"
+          permissions: \"0600\"
           content: |
             ---
             apiVersion: kubeproxy.config.k8s.io/v1alpha1
