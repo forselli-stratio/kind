@@ -272,6 +272,16 @@ spec:
                   username = \"{{ $reg.user }}\"
                 {{- end }}
           path: /etc/containerd/config.toml
+        - path: /run/kubeadm/kube-proxy-config.yaml
+          permissions: "0600"
+          content: |
+            {{- .Files.Get "files/run/kubeadm/kube-proxy-config.yaml" | nindent 4 }}
+        - path: /run/kubeadm/kube-proxy-patch.sh
+          permissions: "0700"
+          content: |
+            {{- .Files.Get "files/run/kubeadm/kube-proxy-patch.sh" | nindent 4 }}
+      preKubeadmCommands:
+        - bash /run/kubeadm/kube-proxy-patch.sh
       postKubeadmCommands:
         - systemctl restart containerd
       {{- end }}
