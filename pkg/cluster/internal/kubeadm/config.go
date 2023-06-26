@@ -292,7 +292,6 @@ kind: KubeProxyConfiguration
 metadata:
   name: config
 mode: "{{ .KubeProxyMode }}"
-metricsBindAddress: "0.0.0.0:10249"
 {{if .FeatureGates}}featureGates:
 {{ range $index, $gate := .SortedFeatureGates }}
   "{{ (StructuralData $gate.Name) }}": {{ $gate.Value }}
@@ -431,7 +430,6 @@ kind: KubeProxyConfiguration
 metadata:
   name: config
 mode: "{{ .KubeProxyMode }}"
-metricsBindAddress: "0.0.0.0:10249"
 {{if .FeatureGates}}featureGates:
 {{ range $index, $gate := .SortedFeatureGates }}
   "{{ (StructuralData $gate.Name) }}": {{ $gate.Value }}
