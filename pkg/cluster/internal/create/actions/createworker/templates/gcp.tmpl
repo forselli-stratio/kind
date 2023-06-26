@@ -278,7 +278,7 @@ spec:
             # this is a workaround to use a script with preKubeadmCommand to modify the kubeadm config files
             # https://github.com/kubernetes-sigs/cluster-api/issues/4512
             for i in $(ls /run/kubeadm/ | grep 'kubeadm.yaml\|kubeadm-join-config.yaml'); do
-              cat <<EOF>> "/run/kubeadm//$i"
+              cat <<EOF>> "/run/kubeadm//\$i"
             ---
             kind: KubeProxyConfiguration
             apiVersion: kubeproxy.config.k8s.io/v1alpha1
