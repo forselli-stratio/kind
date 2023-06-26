@@ -272,7 +272,7 @@ spec:
                   username = \"{{ $reg.user }}\"
                 {{- end }}
           path: /etc/containerd/config.toml
-        - path: /run/kubeadm/kube-proxy-config.yaml
+        - path: /run/kubeadm/kube-proxy-config.sh
           permissions: \"0600\"
           content: |
               #!/usr/bin/env bash
@@ -294,7 +294,7 @@ spec:
               fi
               cat ${dir}/kube-proxy-config.yaml >> ${dir}/kubeadm.yaml
               rm ${dir}/kube-proxy-config.yaml
-        - path: /run/kubeadm/kube-proxy-patch.sh
+        - path: /run/kubeadm/kube-proxy-patch.yaml
           permissions: \"0700\"
           content: |
             ---
