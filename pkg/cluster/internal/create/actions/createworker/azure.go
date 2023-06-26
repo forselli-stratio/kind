@@ -23,20 +23,47 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
 	"sigs.k8s.io/kind/pkg/cluster/nodes"
 	"sigs.k8s.io/kind/pkg/commons"
 	"sigs.k8s.io/kind/pkg/errors"
 	"sigs.k8s.io/kind/pkg/exec"
 )
 
-//go:embed files/azure-storage-classes.yaml
+//go:embed files/azure/azure-storage-classes.yaml
 var azureStorageClasses string
+
+var storageClassAZTemplate = StorageClassDef{
+	APIVersion: "storage.k8s.io/v1",
+	Kind:       "StorageClass",
+	Metadata: struct {
+		Annotations map[string]string `yaml:"annotations,omitempty"`
+		Name        string            `yaml:"name"`
+	}{
+		Annotations: map[string]string{
+			"storageclass.kubernetes.io/is-default-class": "true",
+		},
+		Name: "keos",
+	},
+	Provisioner:       "disk.csi.azure.com",
+	Parameters:        make(map[string]interface{}),
+	VolumeBindingMode: "WaitForFirstConsumer",
+}
+
+var standardAZParameters = commons.SCParameters{
+	SkuName: "StandardSSD_LRS",
+}
+
+var premiumAZParameters = commons.SCParameters{
+	SkuName: "Premium_LRS",
+}
 
 type AzureBuilder struct {
 	capxProvider     string
@@ -58,7 +85,7 @@ func (b *AzureBuilder) setCapx(managed bool) {
 	b.capxVersion = "v1.9.3"
 	b.capxImageVersion = "v1.9.3"
 	b.capxName = "capz"
-	b.stClassName = "default"
+	b.stClassName = "keos"
 	b.csiNamespace = "kube-system"
 	if managed {
 		b.capxTemplate = "azure.aks.tmpl"
@@ -93,7 +120,6 @@ func (b *AzureBuilder) getProvider() Provider {
 func (b *AzureBuilder) installCSI(n nodes.Node, k string) error {
 	var c string
 	var err error
-	var cmd exec.Cmd
 
 	c = "helm install azuredisk-csi-driver /stratio/helm/azuredisk-csi-driver " +
 		" --kubeconfig " + k +
@@ -103,12 +129,11 @@ func (b *AzureBuilder) installCSI(n nodes.Node, k string) error {
 		return errors.Wrap(err, "failed to deploy Azure Disk CSI driver Helm Chart")
 	}
 
-	cmd = n.Command("kubectl", "--kubeconfig", k, "apply", "-f", "-")
-	if err = cmd.SetStdin(strings.NewReader(azureStorageClasses)).Run(); err != nil {
-		return errors.Wrap(err, "failed to create Azure Storage Classes")
-	}
-
 	return nil
+}
+
+func (b *AzureBuilder) setStorageClassParameters(storageClass string, params map[string]string) (string, error) {
+	return "", nil
 }
 
 func (b *AzureBuilder) getAzs(networks commons.Networks) ([]string, error) {
@@ -209,4 +234,93 @@ func getAcrToken(p commons.ProviderParams, acrService string) (string, error) {
 	var response map[string]interface{}
 	json.NewDecoder(jsonResponse.Body).Decode(&response)
 	return response["refresh_token"].(string), nil
+}
+
+func (b *AzureBuilder) configureStorageClass(n nodes.Node, k string, sc commons.StorageClass) error {
+	var cmd exec.Cmd
+
+	cmd = n.Command("kubectl", "--kubeconfig", k, "apply", "-f", "-")
+	if err := cmd.SetStdin(strings.NewReader(azureStorageClasses)).Run(); err != nil {
+		return errors.Wrap(err, "failed to create Azure Storage Classes")
+	}
+	if sc.Parameters.Provisioner != "" {
+
+	}
+
+	params := b.getParameters(sc)
+	storageClass, err := insertParameters(storageClassAZTemplate, params)
+	if err != nil {
+		return err
+	}
+
+	cmd = n.Command("kubectl", "--kubeconfig", k, "apply", "-f", "-")
+	if err = cmd.SetStdin(strings.NewReader(storageClass)).Run(); err != nil {
+		return errors.Wrap(err, "failed to create StorageClass")
+	}
+	return nil
+
+}
+
+func (b *AzureBuilder) getParameters(sc commons.StorageClass) commons.SCParameters {
+	if sc.EncryptionKey != "" {
+		sc.Parameters.DiskEncryptionSetID = sc.EncryptionKey
+	}
+	switch class := sc.Class; class {
+	case "standard":
+		return mergeSCParameters(sc.Parameters, standardAZParameters)
+	case "premium":
+		return mergeSCParameters(sc.Parameters, premiumAZParameters)
+	default:
+		return mergeSCParameters(sc.Parameters, premiumAZParameters)
+	}
+}
+
+func (b *AzureBuilder) internalNginx(networks commons.Networks, credentialsMap map[string]string, ClusterID string) (bool, error) {
+	var resourceGroup string
+	os.Setenv("AZURE_CLIENT_ID", credentialsMap["ClientID"])
+	os.Setenv("AZURE_SECRET_ID", credentialsMap["ClientSecret"])
+	os.Setenv("AZURE_TENANT_ID", credentialsMap["TenantID"])
+
+	creds, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return false, err
+	}
+	ctx := context.Background()
+
+	networkClientFactory, err := armnetwork.NewClientFactory(credentialsMap["SubscriptionID"], creds, nil)
+	if err != nil {
+		return false, err
+	}
+
+	subnetsClient := networkClientFactory.NewSubnetsClient()
+
+	if networks.Subnets != nil {
+		if networks.ResourceGroup != "" {
+			resourceGroup = networks.ResourceGroup
+		} else {
+			resourceGroup = ClusterID
+		}
+		for _, subnet := range networks.Subnets {
+			publicSubnetID, _ := AzureFilterPublicSubnet(ctx, subnetsClient, resourceGroup, networks.VPCID, subnet.SubnetId)
+			if len(publicSubnetID) > 0 {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func AzureFilterPublicSubnet(ctx context.Context, subnetsClient *armnetwork.SubnetsClient, resourceGroup string, VPCID string, subnetID string) (string, error) {
+	subnet, err := subnetsClient.Get(ctx, resourceGroup, VPCID, subnetID, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if subnet.Properties.NatGateway != nil && strings.Contains(*subnet.Properties.NatGateway.ID, "natGateways") {
+		return "", nil
+	} else {
+		return subnetID, nil
+	}
 }
