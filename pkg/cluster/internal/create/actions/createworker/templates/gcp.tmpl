@@ -126,6 +126,7 @@ spec:
           apiVersion: kubeproxy.config.k8s.io/v1alpha1
           metricsBindAddress: "0.0.0.0:10249"
           EOF
+          done
         path: /run/kubeadm/set-kube-proxy-configuration.sh
         permissions: \"0700\"
     preKubeadmCommands:
