@@ -133,8 +133,6 @@ spec:
         owner: root:root
         path: /etc/kubernetes/azure.json
         permissions: \"0644\"
-    preKubeadmCommands:
-      - /run/kubeadm/set-kube-proxy-configuration.sh
     {{- if .Descriptor.ControlPlane.ExtraVolumes }}
     diskSetup:
       filesystems:
@@ -172,7 +170,8 @@ spec:
           cloud-provider: external
         name: {{`'{{ ds.meta_data[\"local_hostname\"] }}'`}}
     postKubeadmCommands: []
-    preKubeadmCommands: []
+    preKubeadmCommands:
+      - /run/kubeadm/set-kube-proxy-configuration.sh
   machineTemplate:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
