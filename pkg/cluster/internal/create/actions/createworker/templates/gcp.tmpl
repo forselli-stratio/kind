@@ -119,7 +119,7 @@ spec:
           # CAPI does not expose an API to modify KubeProxyConfiguration
           # this is a workaround to use a script with preKubeadmCommand to modify the kubeadm config files
           # https://github.com/kubernetes-sigs/cluster-api/issues/4512
-          for i in $(ls /run/kubeadm/ | grep 'kubeadm.yaml\|kubeadm-join-config.yaml'); do
+          for i in \$(ls /run/kubeadm/ | grep 'kubeadm.yaml\|kubeadm-join-config.yaml'); do
             cat <<EOF>> "/run/kubeadm//\$i"
           ---
           kind: KubeProxyConfiguration
