@@ -91,12 +91,15 @@ spec:
           # CAPI does not expose an API to modify KubeProxyConfiguration
           # this is a workaround to use a script with preKubeadmCommand to modify the kubeadm config files
           # https://github.com/kubernetes-sigs/cluster-api/issues/4512
-          cat <<EOF>> "/run/kubeadm/kubeadm.yaml"
-          ---
-          kind: KubeProxyConfiguration
-          apiVersion: kubeproxy.config.k8s.io/v1alpha1
-          metricsBindAddress: "0.0.0.0:10249"
+          FILE=/run/kubeadm/kubeadm.yaml
+          if [ -f "\$FILE" ]; then
+            cat <<EOF>> "\$FILE"
+            ---
+            kind: KubeProxyConfiguration
+            apiVersion: kubeproxy.config.k8s.io/v1alpha1
+            metricsBindAddress: "0.0.0.0:10249"
           EOF
+          fi
         path: /run/kubeadm/set-kube-proxy-configuration.sh
         permissions: \"0700\"
     {{- if gt (len .DockerRegistries) 0 }}
