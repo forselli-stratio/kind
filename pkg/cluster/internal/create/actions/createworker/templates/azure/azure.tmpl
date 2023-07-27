@@ -91,6 +91,7 @@ spec:
           dataDir: /var/lib/etcddisk/etcd
           extraArgs:
             quota-backend-bytes: \"8589934592\"
+            listen-metrics-urls: http://0.0.0.0:2381
     files:
       - content: |
           #!/bin/bash
@@ -106,7 +107,7 @@ spec:
           metricsBindAddress: "0.0.0.0:10249"
           EOF
           fi
-        path: /run/kubeadm/set-kube-proxy-configuration.sh
+        path: /usr/local/bin/set-kube-proxy-configuration.sh
         permissions: \"0700\"
       {{- if .DockerRegistries }}
       - content: |
@@ -176,7 +177,7 @@ spec:
         name: {{`'{{ ds.meta_data[\"local_hostname\"] }}'`}}
     postKubeadmCommands: []
     preKubeadmCommands:
-      - /run/kubeadm/set-kube-proxy-configuration.sh
+      - set-kube-proxy-configuration.sh
   machineTemplate:
     metadata:
       labels:

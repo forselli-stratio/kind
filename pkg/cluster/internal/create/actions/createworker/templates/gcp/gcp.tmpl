@@ -81,6 +81,10 @@ spec:
       scheduler:
         extraArgs:
           bind-address: 0.0.0.0
+      etcd:
+        local:
+          extraArgs:
+            listen-metrics-urls: http://0.0.0.0:2381
     files:
       - content: |
           [Global]
@@ -100,7 +104,7 @@ spec:
           metricsBindAddress: "0.0.0.0:10249"
           EOF
           fi
-        path: /run/kubeadm/set-kube-proxy-configuration.sh
+        path: /usr/local/bin/set-kube-proxy-configuration.sh
         permissions: \"0700\"
     {{- if gt (len .DockerRegistries) 0 }}
       - content: |
@@ -134,7 +138,7 @@ spec:
       - systemctl restart containerd
     {{- end }}
     preKubeadmCommands:
-      - /run/kubeadm/set-kube-proxy-configuration.sh
+      - set-kube-proxy-configuration.sh
     {{- if .KeosCluster.Spec.ControlPlane.ExtraVolumes }}
     diskSetup:
       filesystems:
